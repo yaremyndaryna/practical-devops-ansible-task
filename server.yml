@@ -1,19 +1,21 @@
 ---
 - hosts: server
   become: yes
+
   vars_files:
     - vars/server_vars.yml
     - vars/db_vars.yml
+
   tasks:
     - name: Debug message
       ansible.builtin.debug:
         msg: "Create task to install and preparing web server"
-    
+
     - name: Add PHP repository
       ansible.builtin.apt_repository:
         repo: ppa:ondrej/php
-    
-    - name: Setup Node.js 
+
+    - name: Setup Node.js
       ansible.builtin.uri:
         url: https://deb.nodesource.com/setup_22.x
         return_content: yes
@@ -25,7 +27,7 @@
         stdin: "{{ nodesource_setup.content }}"
 
     - name: Install required packages
-      ansible.builtin.apt: 
+      ansible.builtin.apt:
         name:
           - apache2
           - nodejs
@@ -37,8 +39,10 @@
           - "php{{ php_version }}-curl"
           - "php{{ php_version }}-bz2"
           - "php{{ php_version }}-intl"
-          - libapache2-mod-php{{ php_version }}
-    
+          - "libapache2-mod-php{{ php_version }}"
+        state: present
+        update_cache: yes
+
     - name: Download Composer
       ansible.builtin.get_url:
         url: https://getcomposer.org/download/latest-stable/composer.phar
@@ -48,12 +52,12 @@
     - name: Clone Application Repository
       ansible.builtin.git:
         repo: "{{ app_repo }}"
-        dest: ./devops_pract
+        dest: /tmp/devops_pract
 
     - name: Copy Application Files
       ansible.builtin.copy:
-        src: ./devops_pract/
-        dest: "{{ app_path }}"
+        src: /tmp/devops_pract/
+        dest: "{{ app_path }}/"
         remote_src: true
 
     - name: Install Application Dependencies
@@ -61,7 +65,7 @@
         command: install
         working_dir: "{{ app_path }}"
       environment:
-        COMPOSER_ALLOW_SUPERUSER: 1
+        COMPOSER_ALLOW_SUPERUSER: "1"
 
     - name: Install Node.js Dependencies
       ansible.builtin.npm:
@@ -75,22 +79,26 @@
     - name: Generate Application Key
       ansible.builtin.command:
         cmd: php artisan key:generate
+        chdir: "{{ app_path }}"
 
     - name: Migrate Application Database
       ansible.builtin.command:
         cmd: php artisan migrate
+        chdir: "{{ app_path }}"
 
     - name: Build Application
       ansible.builtin.command:
         cmd: npm run build
+        chdir: "{{ app_path }}"
 
     - name: Remove node_modules directory
       ansible.builtin.file:
-        path: node_modules
+        path: "{{ app_path }}/node_modules"
         state: absent
 
     - name: Set ownership of application files
       ansible.builtin.file:
+        path: "{{ app_path }}"
         owner: "{{ apache_user }}"
         group: "{{ apache_user }}"
         recurse: yes
@@ -98,19 +106,21 @@
     - name: Enable Apache rewrite module
       community.general.apache2_module:
         name: rewrite
+      notify: Restart Apache
 
     - name: Configure Apache Virtual Host
       ansible.builtin.template:
         src: apache.conf.j2
         dest: /etc/apache2/sites-available/app.conf
+      notify: Restart Apache
 
     - name: Enable Apache Virtual Host
-      command:
+      ansible.builtin.command:
         cmd: a2ensite app
-  
+      notify: Restart Apache
+
   handlers:
     - name: Restart Apache
-      service:
+      ansible.builtin.service:
         name: apache2
         state: restarted
-
