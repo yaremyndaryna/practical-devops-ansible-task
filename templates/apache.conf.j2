@@ -4,7 +4,7 @@
     DocumentRoot {{ app_path }}/public
 
     <Directory {{ app_path }}/public>
-        Option Indexes FollowSymLinks
+        Options Indexes FollowSymLinks
         AllowOverride All
         Require all granted
     </Directory>
